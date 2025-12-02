@@ -1,4 +1,4 @@
-65- model al dataset
+65- densenet 121 model al dataset
 
 pip install tensorflow
 pip install keras
