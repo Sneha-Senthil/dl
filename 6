@@ -1,0 +1,177 @@
+ex6 65 model al dataset
+
+
+pip install tensorflow
+pip install keras
+pip install numpy
+pip install pillow
+pip install opencv-python
+pip install matplotlib
+pip install requests
+
+!unzip -q "/content/Alzhiemer Disease Classification Dataset-20251202T064234Z-1-001.zip" -d "/content/dataset/"
+
+import os
+import numpy as np
+import cv2
+import requests
+from io import BytesIO
+from PIL import Image
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
+from keras.models import load_model
+from keras import backend as K
+
+# 🔹 Replace ResNet50 import with DenseNet169
+from keras.applications.densenet import DenseNet169, preprocess_input as densenet_preprocess
+# ======================================================================
+# 1️⃣ LOAD MODELS: DENSENET169 (FEATURE EXTRACTOR) + YOUR CLASSIFIER
+# ======================================================================
+
+# K.set_learning_phase(0)
+
+# DenseNet169 feature extractor (no classifier head)
+feature_extractor = DenseNet169(include_top=False, weights="imagenet", pooling=None)
+
+# Your pretrained classifier trained on extracted features
+model = load_model("/content/Exercise_6_feature_classification.hdf5")
+classes = ["MildDemented", "ModerateDemented", "NonDemented", "VeryMildDemented"]
+# ======================================================================
+# 2️⃣ FEATURE EXTRACTION USING DENSENET169
+# ======================================================================
+
+def extract_features(image_path):
+    img = load_img(image_path, target_size=(224, 224))
+    arr = img_to_array(img)
+    arr = np.expand_dims(arr, axis=0)
+    arr = densenet_preprocess(arr)
+    features = feature_extractor.predict(arr)   # shape = (1, 1664)
+    return features
+
+
+# ======================================================================
+# 3️⃣ PREDICTION USING YOUR HDF5 CLASSIFIER
+# ======================================================================
+
+def predict_from_image_path(image_path):
+    feats = extract_features(image_path)
+    pred = model.predict(feats)
+    idx = np.argmax(pred)
+    return idx, classes[idx]
+
+
+def predict_from_image_url(image_url):
+    res = requests.get(image_url)
+    im = Image.open(BytesIO(res.content))
+    im = im.resize((224, 224))
+    arr = img_to_array(im)
+    arr = np.expand_dims(arr, axis=0)
+    arr = densenet_preprocess(arr)
+    feats = feature_extractor.predict(arr)
+    pred = model.predict(feats)
+    idx = np.argmax(pred)
+    return idx, classes[idx]
+
+
+# ======================================================================
+# 4️⃣ GRAD-CAM (WARNING: Only works if classifier has conv layers)
+# ======================================================================
+
+def grad_CAM(image_path):
+    # Load and preprocess the image for DenseNet
+    img = load_img(image_path, target_size=(224, 224))
+    img_arr = img_to_array(img)
+    img_input = np.expand_dims(img_arr, axis=0)
+    img_input = densenet_preprocess(img_input)
+
+    layer_names_dict = {
+    "VGG16": ['block1_conv1','block2_conv1','block3_conv1','block4_conv1','block5_conv1'],
+    "VGG19": ['block1_conv1','block2_conv1','block3_conv1','block4_conv1','block5_conv1'],
+    "ResNet50": ['conv1_conv','conv2_block3_out','conv3_block4_out','conv4_block6_out','conv5_block3_out'],
+    "DenseNet121": ['conv1/conv','conv2_block6_concat','conv3_block12_concat','conv4_block24_concat'],
+    "DenseNet169": ['conv1/conv','conv2_block12_concat','conv3_block32_concat','conv4_block32_concat'],
+    "DenseNet201": ['conv1/conv','conv2_block12_concat','conv3_block48_concat','conv4_block32_concat'],
+    "InceptionV3": ['conv2d_1','conv2d_3','mixed0','mixed3','mixed6'],
+    "Xception": ['block1_conv1','block2_sepconv1','block3_sepconv1','block4_sepconv1','block5_sepconv1'],
+    "InceptionResNetV2": ['conv2d_1','conv2d_3','block35_1_conv','block17_1_conv','block8_1_conv']
+}
+
+    # Forward pass through DenseNet169
+    layer_name = "conv5_block32_concat"  # last conv output layer in DenseNet169
+    last_conv_layer = feature_extractor.get_layer(layer_name)
+
+    grad_model = tf.keras.Model(
+        inputs=feature_extractor.input,
+        outputs=[last_conv_layer.output, feature_extractor.output]
+    )
+
+    with tf.GradientTape() as tape:
+        conv_output, preds = grad_model(img_input)
+        class_index = np.argmax(model.predict(feature_extractor.predict(img_input)))
+        loss = preds[:, class_index]
+
+    # Compute gradients
+    grads = tape.gradient(loss, conv_output)
+    guided_grads = grads[0]
+
+    # Average over spatial dimension
+    weights = np.mean(guided_grads, axis=(0, 1))
+
+    # Weighted sum of channels
+    cam = np.zeros(conv_output.shape[1:3], dtype=np.float32)
+    for i, w in enumerate(weights):
+        cam += w * conv_output[0, :, :, i]
+
+    # Normalize
+    cam = np.maximum(cam, 0)
+    cam = cam / cam.max()
+
+    # Resize heatmap to match original image
+    heatmap = cv2.resize(cam, (img_arr.shape[1], img_arr.shape[0]))
+    heatmap = np.uint8(255 * heatmap)
+
+    # Apply colormap
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+
+    # Superimpose heatmap on image
+    superimposed = cv2.addWeighted(img_arr.astype("uint8"), 0.6, heatmap, 0.4, 0)
+
+    # Show result
+    plt.figure(figsize=(10, 6))
+    plt.imshow(superimposed)
+    plt.axis("off")
+    plt.show()
+
+
+# ======================================================================
+# 5️⃣ TEST A SINGLE IMAGE
+# ======================================================================
+import tensorflow as tf
+
+print(predict_from_image_path('/content/dataset/Alzhiemer Disease Classification Dataset/test/MildDemented/004dd801-1100-4d89-985d-ef65a22eabab.jpg'))
+grad_CAM('/content/dataset/Alzhiemer Disease Classification Dataset/test/MildDemented/004dd801-1100-4d89-985d-ef65a22eabab.jpg')
+# ======================================================================
+# 6️⃣ LOOP THROUGH TEST FOLDERS AND CHECK ACCURACY
+# ======================================================================
+
+for i, c in enumerate(classes):
+    folder = '/content/dataset/Alzhiemer Disease Classification Dataset/test/' + c + '/'
+    count = 1
+
+    for file in os.listdir(folder):
+        if file.endswith('.jpg'):
+            image_path = folder + file
+
+            p, class_name = predict_from_image_path(image_path)
+
+            if p == i:
+                print(file, p, class_name)
+            else:
+                print(file, p, class_name, "INCORRECT PREDICTION")
+                grad_CAM(image_path)
+
+            count += 1
+            if count == 20:
+                break
