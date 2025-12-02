@@ -1,0 +1,55 @@
+!pip install tensorflow matplotlib
+uplaod animal image 
+
+from tensorflow.keras.applications import VGG16, VGG19, ResNet50, InceptionV3, Xception, imagenet_utils
+from tensorflow.keras.applications.inception_v3 import preprocess_input
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ------------------------------
+# Choose the model to run
+# ------------------------------
+model_name = "InceptionV3"
+
+models = {
+    "VGG16":      (VGG16, (224, 224), imagenet_utils.preprocess_input),
+    "VGG19":      (VGG19, (224, 224), imagenet_utils.preprocess_input),
+    "ResNet50":   (ResNet50, (224, 224), imagenet_utils.preprocess_input),
+    "InceptionV3":(InceptionV3, (299, 299), preprocess_input),
+    "Xception":   (Xception, (299, 299), preprocess_input)
+}
+
+# Load model, image size and preprocess function
+model, size, preprocess = models[model_name]
+
+# ----------------------------------------------------
+# Load Image
+# ----------------------------------------------------
+img = load_img("/content/animal.jpg", target_size=size)
+
+# Show the image
+plt.imshow(img)
+plt.axis("off")
+plt.show()
+
+# Preprocess the image
+arr = img_to_array(img)
+arr = np.expand_dims(arr, axis=0)
+arr = preprocess(arr)
+
+# ----------------------------------------------------
+# Load the selected model
+# ----------------------------------------------------
+Model = model(weights="imagenet")
+
+# Prediction
+preds = Model.predict(arr)
+
+# Decode predictions
+decoded_preds = imagenet_utils.decode_predictions(preds, top=5)[0]
+
+# Print predictions
+print(f"\nTop 5 Predictions using {model_name}:\n")
+for i, (imagenet_id, label, prob) in enumerate(decoded_preds):
+    print(f"{i+1}. {label} : {prob*100:.2f}%")
