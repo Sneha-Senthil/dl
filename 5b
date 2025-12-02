@@ -1,0 +1,167 @@
+5th --65 model oct dataset
+
+!unzip -q "/content/OCT Dataset-20251202T111446Z-1-001.zip" -d "/content/dataset/"
+
+pip install tensorflow
+pip install keras
+pip install numpy
+pip install pillow
+pip install matplotlib
+pip install opencv-python
+pip install requests
+
+
+import os
+import numpy as np
+import keras
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
+from keras.models import load_model
+from keras import backend as K
+from io import BytesIO
+from PIL import Image
+import cv2
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+from matplotlib import colors
+import requests
+
+# Load model
+model = load_model('/content/densenet169_head_ex5.h5')
+
+# Image generator
+eval_datagen = ImageDataGenerator(rescale=1./255)
+eval_dir = '/content/dataset/OCT Dataset/test'
+
+eval_generator = eval_datagen.flow_from_directory(
+    eval_dir,
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='categorical'
+)
+
+model.compile(
+    optimizer="adam",
+    loss="categorical_crossentropy",
+    metrics=["accuracy"]
+)
+
+# Evaluate
+eval_generator.reset()
+loss = model.evaluate(eval_generator, steps=10)
+out = {}
+for index, name in enumerate(model.metrics_names):
+    print(name, loss[index])
+
+# Classes
+classes = ["CNV", "DME", "DRUSEN", "NORMAL"]
+
+def preprocess_input(x):
+    x = img_to_array(x) / 255.
+    return np.expand_dims(x, axis=0)
+
+def predict_from_image_path(image_path):
+    return predict_image(load_img(image_path, target_size=(224, 224)))
+
+def predict_from_image_url(image_url):
+    res = requests.get(image_url)
+    im = Image.open(BytesIO(res.content))
+    return predict_from_image_path(im.fp)
+
+def predict_image(im):
+    x = img_to_array(im) / 255.0
+    x = np.expand_dims(x, axis=0)
+    pred = np.argmax(model.predict(x))
+    return pred, classes[pred]
+
+
+import tensorflow as tf
+import numpy as np
+import cv2
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
+import matplotlib.pyplot as plt
+
+def grad_CAM(image_path):
+    img = load_img(image_path, target_size=(224, 224))
+    x = img_to_array(img) / 255.0
+    x = np.expand_dims(x, axis=0)
+
+    preds = model.predict(x)
+    index = np.argmax(preds[0])
+
+    last_conv_layer = model.get_layer('conv1_conv')
+    grad_model = tf.keras.Model([model.inputs], [last_conv_layer.output, model.output])
+
+    with tf.GradientTape() as tape:
+        conv_outputs, predictions = grad_model(x)
+        loss = predictions[:, index]
+
+    grads = tape.gradient(loss, conv_outputs)
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1, 2))
+    conv_outputs = conv_outputs[0].numpy()
+    pooled_grads = pooled_grads.numpy()
+
+    for i in range(pooled_grads.shape[-1]):
+        conv_outputs[:, :, i] *= pooled_grads[i]
+
+    heatmap = np.mean(conv_outputs, axis=-1)
+    heatmap = np.maximum(heatmap, 0)
+    heatmap /= heatmap.max()
+
+    img_cv = cv2.imread(image_path)
+    img_cv = cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB)
+    heatmap = cv2.resize(heatmap, (img_cv.shape[1], img_cv.shape[0]))
+
+    heatmap = np.uint8(255 * heatmap)
+    heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+
+    output = cv2.addWeighted(img_cv, 0.6, heatmap, 0.4, 0)
+
+    plt.figure(figsize=(12, 6))
+    plt.imshow(output)
+    plt.axis("off")
+    plt.show()
+
+
+# Example single prediction
+print(predict_from_image_path('/content/dataset/OCT Dataset/test/CNV/CNV-6652117-1.jpeg'))
+
+grad_CAM('/content/dataset/OCT Dataset/test/CNV/CNV-6652117-1.jpeg')
+
+# Loop over classes and test images
+for i, c in enumerate(classes):
+    count = 1                    # move ABOVE inner loop
+    folder = '/content/dataset/OCT Dataset/test/' + c + '/'
+
+    for file in os.listdir(folder):
+        if count > 20:
+            break
+
+        if file.endswith(('.jpg', '.jpeg', '.png')):
+            image_path = folder + file
+            p, class_name = predict_from_image_path(image_path)
+            print(image_path)
+
+            if p == i:
+                print(file, p, class_name)
+            else:
+                print(file, p, class_name, "**INCORRECT PREDICTION**")
+                grad_CAM(image_path)
+
+        count += 1
+
+
+# Clean final classifier function
+def preprocess_input(path, size=(224, 224)):
+    img = load_img(path, target_size=size)
+    img = img_to_array(img) / 255.0
+    return np.expand_dims(img, axis=0)
+
+def classify(image_path):
+    x = preprocess_input(image_path)
+    pred = model.predict(x)
+    idx = np.argmax(pred)
+    return idx, classes[idx], pred[0][idx]
+
+image = '/content/dataset/OCT Dataset/test/CNV/CNV-6652117-1.jpeg'
+cls_id, label, prob = classify(image)
+print(f"Predicted: {label} ({prob*100:.2f}%)")
