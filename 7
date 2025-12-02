@@ -1,0 +1,94 @@
+ex 7 14 model densenet freshwater dataset
+
+!unzip "Freshwater Fish Disease Aquaculture Classification Dataset-20251202T084023Z-1-001 (1).zip" -d /content/
+
+import numpy as np
+import pickle
+import matplotlib.pyplot as plt
+from tensorflow.keras.models import load_model
+from tensorflow.keras.applications import DenseNet121
+from tensorflow.keras.applications.densenet import preprocess_input
+from tensorflow.keras.preprocessing.image import img_to_array, load_img
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# =====================================================
+# 1. LOAD MODEL
+# =====================================================
+model_path = "/content/caption_DenseNet121_Freshwater_Fish_Disease_Aquaculture_in_south_asia.hdf5"
+model3 = load_model(model_path)
+print("Caption model loaded!")
+
+# =====================================================
+# 2. LOAD TOKENIZER
+# =====================================================
+tokenizer_path = "/content/tokenizer_Densenet121_Freshwater_Fish_Disease.pkl"
+with open(tokenizer_path, "rb") as f:
+    tokenizer = pickle.load(f)
+
+print("Tokenizer loaded! Total words:", len(tokenizer.word_index))
+
+# =====================================================
+# 3. MAXLEN
+# =====================================================
+maxlen = 59
+
+# =====================================================
+# 4. FEATURE EXTRACTION
+# =====================================================
+def extract_features(image_path):
+    model = DenseNet121(include_top=False, weights="imagenet", pooling="avg")
+
+    image = load_img(image_path, target_size=(224, 224))
+    image_arr = img_to_array(image)
+    image_arr = np.expand_dims(image_arr, axis=0)
+    image_arr = preprocess_input(image_arr)
+
+    features = model.predict(image_arr)
+    print("Features extracted:", features.shape)
+
+    return features, image
+
+# =====================================================
+# 5. CAPTION GENERATION
+# =====================================================
+def generate_caption(photo, tokenizer, maxlen):
+
+    intext = "startseq"
+
+    for _ in range(maxlen):
+
+        seq = tokenizer.texts_to_sequences([intext])[0]
+        seq = pad_sequences([seq], maxlen=maxlen, padding="post")
+
+        yhat = model3.predict([photo, seq], verbose=0)
+        word_id = np.argmax(yhat)
+
+        # Convert ID → word
+        word = None
+        for w, i in tokenizer.word_index.items():
+            if i == word_id:
+                word = w
+                break
+
+        if word is None or word == "endseq":
+            break
+
+        intext += " " + word
+
+    return intext
+
+# =====================================================
+# 6. RUN
+# =====================================================
+
+image_path = "/content/Freshwater Fish Disease Aquaculture Classification Dataset/Test/Bacterial gill disease/Bacterial gill disease (1).jpeg"
+
+photo, original_image = extract_features(image_path)
+caption = generate_caption(photo, tokenizer, maxlen)
+
+plt.imshow(original_image)
+plt.axis("off")
+plt.title("Generated Caption:\n" + caption, fontsize=12)
+plt.show()
+
+print("Caption:", caption)
