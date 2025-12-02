@@ -1,4 +1,4 @@
-5th --65 model oct dataset
+5th --65 densenet 121 model oct dataset
 
 !unzip -q "/content/OCT Dataset-20251202T111446Z-1-001.zip" -d "/content/dataset/"
 
