@@ -1,0 +1,36 @@
+!pip install seaborn scikit-learn
+
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Example true labels and predicted labels
+y_true = ["Apple", "Banana", "Grape", "Mango", "Strawberry",
+          "Apple", "Banana", "Grape", "Mango", "Strawberry"]
+
+y_pred = ["Apple", "Banana", "Grape", "Mango", "Apple",
+          "Apple", "Banana", "Grape", "Mango", "Strawberry"]
+
+# ----- Metrics -----
+acc = accuracy_score(y_true, y_pred)
+
+prec = precision_score(y_true, y_pred, average='macro')   # or 'micro'
+rec = recall_score(y_true, y_pred, average='macro')
+f1 = f1_score(y_true, y_pred, average='macro')
+
+print("Accuracy :", acc)
+print("Precision:", prec)
+print("Recall   :", rec)
+print("F1-score :", f1)
+
+# ----- Confusion Matrix Plot -----
+cm = confusion_matrix(y_true, y_pred, labels=["Apple","Banana","Grape","Mango","Strawberry"])
+
+plt.figure(figsize=(8,6))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+            xticklabels=["Apple","Banana","Grape","Mango","Strawberry"],
+            yticklabels=["Apple","Banana","Grape","Mango","Strawberry"])
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.title("Confusion Matrix")
+plt.show()
