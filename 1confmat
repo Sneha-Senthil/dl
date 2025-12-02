@@ -1,3 +1,5 @@
+!pip install pycm seaborn
+
 import seaborn as sns
 import pandas as pd
 from pycm import ConfusionMatrix
